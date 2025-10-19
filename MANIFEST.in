@@ -1,0 +1,6 @@
+include README.md
+include README_CLIENT.md
+include requirements.txt
+include SSL_SETTINGS_FIX.md
+recursive-include nginx_proxy_manager_client *.py
+recursive-include examples *.py
