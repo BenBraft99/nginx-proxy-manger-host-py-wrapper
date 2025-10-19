@@ -265,6 +265,39 @@ Enable or disable a proxy host.
 
 **Returns:** Dict with updated proxy host details
 
+## Debugging
+
+Enable debug mode to see detailed API requests and responses:
+
+```python
+client = NginxProxyManagerClient(
+    host="http://localhost:81",
+    username="admin@example.com",
+    password="your-password",
+    debug=True  # Enable debug output
+)
+
+# Now all API requests will show:
+# - Request method and URL
+# - Request payload
+# - Response status code
+# - Response body
+```
+
+This is very helpful when troubleshooting SSL certificate issues or other API errors.
+
+## Troubleshooting SSL Issues
+
+For comprehensive SSL troubleshooting, see:
+- `SSL_TROUBLESHOOTING.md` - Common SSL errors and solutions
+- `SSL_SOLUTION.md` - Detailed explanation of SSL certificate workflow
+- `SSL_SETTINGS_FIX.md` - Information about SSL settings behavior
+
+Common issues:
+1. **500 Internal Server Error**: Often caused by Let's Encrypt rate limits. Use `reuse_certificate=True` to avoid this.
+2. **SSL Certificate not created**: Domain must point to NPM server and port 80 must be accessible.
+3. **SSL forced/HTTP/2 not enabled after creation**: This is normal NPM behavior. The client automatically updates these settings after certificate creation.
+
 ## Error Handling
 
 The library raises two types of exceptions:
@@ -336,6 +369,38 @@ When creating a proxy host with SSL, these defaults are applied:
 - `ssl_forced=True` - HTTPS redirect enabled
 - `hsts_enabled=True` - HSTS enabled
 - `allow_websocket_upgrade=True` - WebSocket support enabled
+
+### Avoiding Let's Encrypt Rate Limits
+
+Let's Encrypt has rate limits (50 certificates per registered domain per week). To avoid hitting these limits when creating or renaming hosts, you can reuse existing certificates:
+
+```python
+# When creating a new host, check for existing certificates first
+host = client.create_proxy_host(
+    domain_name="app.yourdomain.com",
+    forward_host="192.168.1.100",
+    forward_port=8080,
+    reuse_certificate=True,  # Check for existing cert before requesting new one
+    letsencrypt_email="your@email.com"
+)
+
+# When renaming, also check for existing certificates
+client.rename_proxy_host(
+    host_id=1,
+    new_domain_name="newapp.yourdomain.com",
+    renew_certificate=True,   # Request new certificate
+    reuse_certificate=True    # But check for existing cert first
+)
+```
+
+**How it works**:
+- When `reuse_certificate=True`, the client checks if a certificate already exists for the domain(s)
+- If found, it reuses the existing certificate instead of requesting a new one
+- If not found, it requests a new certificate from Let's Encrypt
+- This is especially useful when:
+  - Re-creating a host that was deleted
+  - Testing and recreating hosts multiple times
+  - Managing multiple hosts with the same domain
 
 ## License
 

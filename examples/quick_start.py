@@ -4,12 +4,11 @@ Quick start script for Nginx Proxy Manager Python Client
 This is a minimal example to get you started quickly.
 """
 
-from npm_client import NginxProxyManagerClient
-
+from nginx_proxy_manager_client import NginxProxyManagerClient
 # Configure your Nginx Proxy Manager instance
-NPM_HOST = "http://ip"  # Change to your NPM instance URL
-NPM_USERNAME = "admin@changeme"  # Change to your username
-NPM_PASSWORD = "changeme"  # Change to your password
+NPM_HOST = "http://78.47.101.164:81"  # Change to your NPM instance URL
+NPM_USERNAME = "ben@flowwy.de"  # Change to your username
+NPM_PASSWORD = "X7It7o15Rpj0"  # Change to your password
 
 
 def quick_start():
@@ -33,7 +32,7 @@ def quick_start():
     print("Creating proxy host with SSL...")
     host = client.create_proxy_host(
         domain_name="test.supabase.dev.flowwy.de",      # Your domain
-        forward_host="192.168.1.100",       # Your backend server IP/hostname
+        forward_host="test",       # Your backend server IP/hostname
         forward_port=8080,                   # Your backend server port
         letsencrypt_email=NPM_USERNAME,       # Email for Let's Encrypt notifications
         block_exploits=True,
@@ -56,9 +55,9 @@ def quick_start():
     host_id = host['id']
     
     # Rename the domain (optional)
-    print("\nRenaming domain...")
-    client.rename_proxy_host(host_id, "test2.supabase.dev.flowwy.de")
-    print("✅ Domain renamed!")
+    # print("\nRenaming domain...")
+    # client.rename_proxy_host(host_id, "test2.supabase.dev.flowwy.de")
+    # print("✅ Domain renamed!")
     
     # Delete the proxy host (optional - comment out if you want to keep it)
     # print("\nDeleting proxy host...")

@@ -178,6 +178,67 @@ class NginxProxyManagerClient:
         except requests.exceptions.RequestException as e:
             raise APIError(f"Request failed: {str(e)}")
     
+    def get_all_certificates(self, expand: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """
+        Get all SSL certificates.
+        
+        Args:
+            expand: List of related objects to expand
+            
+        Returns:
+            List of certificate dictionaries
+            
+        Raises:
+            APIError: If the request fails
+        """
+        params = {}
+        if expand:
+            params['expand'] = ','.join(expand)
+        
+        return self._request('GET', '/nginx/certificates', params=params)
+    
+    def find_certificate_by_domains(self, domain_names: List[str]) -> Optional[Dict[str, Any]]:
+        """
+        Find an existing certificate that matches the given domain names.
+        
+        This helps avoid Let's Encrypt rate limits by reusing existing certificates.
+        
+        Args:
+            domain_names: List of domain names to match
+            
+        Returns:
+            Certificate dict if found, None otherwise
+            
+        Raises:
+            APIError: If the request fails
+        """
+        # Normalize and sort domain names for comparison
+        domain_names_sorted = sorted([d.lower().strip() for d in domain_names])
+        
+        try:
+            certificates = self.get_all_certificates()
+            
+            for cert in certificates:
+                if cert.get('provider') != 'letsencrypt':
+                    continue
+                    
+                cert_domains = cert.get('domain_names', [])
+                cert_domains_sorted = sorted([d.lower().strip() for d in cert_domains])
+                  # Check if domains match exactly
+                if cert_domains_sorted == domain_names_sorted:
+                    if self.debug:
+                        print(f"[DEBUG] Found existing certificate ID {cert['id']} for domains: {', '.join(domain_names)}")
+                    return cert
+            
+            if self.debug:
+                print(f"[DEBUG] No existing certificate found for domains: {', '.join(domain_names)}")
+            return None
+            
+        except APIError as e:
+            if self.debug:
+                print(f"[DEBUG] Error searching for certificates: {e}")
+            return None
+    
     def create_proxy_host(
         self,
         domain_name: str,
@@ -196,7 +257,8 @@ class NginxProxyManagerClient:
         advanced_config: str = "",
         locations: Optional[List[Dict]] = None,
         certificate_id: Optional[int] = None,
-        letsencrypt_email: Optional[str] = None
+        letsencrypt_email: Optional[str] = None,
+        reuse_certificate: bool = True
     ) -> Dict[str, Any]:
         """
         Create a new proxy host with automatic SSL certificate generation.
@@ -219,6 +281,8 @@ class NginxProxyManagerClient:
             locations: Custom location blocks
             certificate_id: Existing certificate ID to use, or None to request new SSL cert
             letsencrypt_email: Email for Let's Encrypt notifications (defaults to username)
+            reuse_certificate: If True, check for existing certificate before requesting new one
+                              (helps avoid Let's Encrypt rate limits)
             
         Returns:
             Dict containing the created proxy host details
@@ -246,19 +310,34 @@ class NginxProxyManagerClient:
             "access_list_id": access_list_id,
             "advanced_config": advanced_config,
             "locations": locations or [],
-            "enabled": True
-        }
-          # Handle SSL certificate
+            "enabled": True        }
+        
+        # Handle SSL certificate
         request_new_cert = certificate_id is None
         
         if request_new_cert:
-            # Request new SSL certificate
-            payload["certificate_id"] = "new"
-            payload["meta"] = {
-                "letsencrypt_agree": True,
-                "letsencrypt_email": letsencrypt_email or self.username,
-                "dns_challenge": False
-            }
+            # Check if we should reuse an existing certificate
+            if reuse_certificate:
+                existing_cert = self.find_certificate_by_domains(domain_names)
+                if existing_cert:
+                    # Reuse existing certificate to avoid rate limits
+                    payload["certificate_id"] = existing_cert['id']
+                    payload["meta"] = {}
+                    request_new_cert = False  # Don't request a new one
+                    if self.debug:
+                        print(f"[DEBUG] Reusing existing certificate ID {existing_cert['id']}")
+            
+            # If we still need to request a new certificate
+            if request_new_cert:
+                # Request new SSL certificate
+                payload["certificate_id"] = "new"
+                payload["meta"] = {
+                    "letsencrypt_agree": True,
+                    "letsencrypt_email": letsencrypt_email or self.username,
+                    "dns_challenge": False
+                }
+                if self.debug:
+                    print(f"[DEBUG] Requesting new SSL certificate for {', '.join(domain_names)}")
         else:
             # Use existing certificate or no certificate (0)
             payload["certificate_id"] = certificate_id
@@ -377,8 +456,7 @@ class NginxProxyManagerClient:
             
         Raises:
             APIError: If update fails
-        """
-        # Build payload with only provided parameters
+        """        # Build payload with only provided parameters
         payload = {}
         
         if domain_name is not None or additional_domain_names is not None:
@@ -404,7 +482,7 @@ class NginxProxyManagerClient:
         if http2_support is not None:
             payload["http2_support"] = http2_support
         if block_exploits is not None:
-            payload["block_exploits"] = block_exploits        
+            payload["block_exploits"] = block_exploits
         if caching_enabled is not None:
             payload["caching_enabled"] = caching_enabled
         if allow_websocket_upgrade is not None:
@@ -427,7 +505,8 @@ class NginxProxyManagerClient:
         host_id: int,
         new_domain_name: str,
         additional_domain_names: Optional[List[str]] = None,
-        renew_certificate: bool = True
+        renew_certificate: bool = True,
+        reuse_certificate: bool = True
     ) -> Dict[str, Any]:
         """
         Rename a proxy host (change its domain name).
@@ -442,6 +521,8 @@ class NginxProxyManagerClient:
             additional_domain_names: Additional domain names for this proxy host
             renew_certificate: If True and the host has an SSL cert, request a new one
                               for the new domain name (default: True)
+            reuse_certificate: If True, check for existing certificate before requesting new one
+                              (helps avoid Let's Encrypt rate limits)
             
         Returns:
             Dict containing the updated proxy host details
